@@ -609,6 +609,51 @@ function App() {
       .catch(err => flash(`Error: ${err.message}`));
   }
 
+  // Play a history item by searching Roon's library and executing Play Now
+  async function playHistoryItem(np) {
+    const title  = np?.three_line?.line1 ?? np?.two_line?.line1 ?? np?.one_line?.line1 ?? '';
+    const artist = np?.three_line?.line2 ?? np?.two_line?.line2 ?? '';
+    if (!title || !zone) return;
+
+    flash('Searching…');
+    try {
+      const query        = [title, artist].filter(Boolean).join(' ');
+      const searchResult = await browseApi.search(query, zoneOrOutputId);
+
+      // Search results are grouped into sections (Tracks, Albums, Artists…)
+      const tracksSection = searchResult.items.find(i => /^tracks?$/i.test(i.title));
+      if (!tracksSection) { flash('Track not found in library'); return; }
+
+      const tracksResult = await browseApi.browseItem(
+        tracksSection, searchResult.multiSessionKey, searchResult.hierarchy, zoneOrOutputId
+      );
+
+      // Prefer exact title match, fall back to first action_list
+      const match = tracksResult.items?.find(
+        i => i.hint === 'action_list' && i.title?.toLowerCase() === title.toLowerCase()
+      ) ?? tracksResult.items?.find(i => i.hint === 'action_list');
+
+      if (!match) { flash('Track not found in library'); return; }
+
+      const actionsResult = await browseApi.browseItem(
+        match, tracksResult.multiSessionKey, tracksResult.hierarchy, zoneOrOutputId
+      );
+
+      const playNow = actionsResult.items?.find(i => i.hint === 'action' && /play now/i.test(i.title))
+                   ?? actionsResult.items?.find(i => i.hint === 'action' && /play/i.test(i.title))
+                   ?? actionsResult.items?.find(i => i.hint === 'action');
+
+      if (!playNow) { flash('No play action found'); return; }
+
+      await browseApi.browseItem(
+        playNow, actionsResult.multiSessionKey, actionsResult.hierarchy, zoneOrOutputId
+      );
+      flash(`▶  ${title}`);
+    } catch (err) {
+      flash(`Error: ${err.message}`);
+    }
+  }
+
   // ── zone picker ───────────────────────────────────────────────────────────
   function confirmZone(idx) {
     const z = zones[idx];
@@ -845,8 +890,12 @@ function App() {
       if (key.downArrow) { setQueueIdx(i => Math.min(queueItems.length - 1, i + 1)); return; }
 
       if (key.return) {
-        if (queueIdx >= 0) playFromQueue(queueIdx);
-        else flash('History — browse to queue a previous track');
+        if (queueIdx >= 0) {
+          playFromQueue(queueIdx);
+        } else {
+          const np = history[-queueIdx - 1]; // queueIdx -1 → history[0] (most recent)
+          if (np) playHistoryItem(np);
+        }
         return;
       }
 
