@@ -332,6 +332,7 @@ function BrowsePane({ stack, browseIdx, browseFilter, filteredItems, loading, te
 function App() {
   // Connection
   const [connected,     setConnected]     = useState(false);
+  const wasConnectedRef = useRef(false);
   const [zones,         setZones]         = useState([]);
   const [activeZoneId,  setActiveZoneId]  = useState(null);
   const [hasChosZone,   setHasChosZone]   = useState(false);
@@ -460,7 +461,7 @@ function App() {
 
   // ── Roon events ───────────────────────────────────────────────────────────
   useEffect(() => {
-    const onPaired   = () => { if (isMountedRef.current) { setConnected(true); setMessage(''); } };
+    const onPaired   = () => { if (isMountedRef.current) { wasConnectedRef.current = true; setConnected(true); setMessage(''); } };
     const onUnpaired = () => { if (isMountedRef.current) { setConnected(false); setZones([]); } };
     const onZones    = (updated) => {
       if (!isMountedRef.current) return;
@@ -974,8 +975,12 @@ function App() {
 
   if (!connected) {
     return h(Box, { flexDirection: 'column', padding: 1 },
-      h(Text, { color: 'yellow' }, 'Searching for Roon on your local network…'),
-      h(Text, { dimColor: true }, 'First run? Approve "Roon CLI" in Roon → Settings → Extensions.')
+      wasConnectedRef.current
+        ? h(Text, { color: 'yellow' }, 'Reconnecting to Roon…')
+        : h(React.Fragment, null,
+            h(Text, { color: 'yellow' }, 'Searching for Roon on your local network…'),
+            h(Text, { dimColor: true }, 'First run? Approve "Roon CLI" in Roon → Settings → Extensions.')
+          )
     );
   }
 
