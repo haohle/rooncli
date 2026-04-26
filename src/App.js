@@ -65,10 +65,11 @@ function NowPlayingPanel({ zone, seekPos, termWidth }) {
   const settingsStr  = settingsBits.join('  ');
 
   const zoneName      = zone?.display_name ?? '';
-  // Right column: "vol XX  ZoneName" — zone on far right
   const rightColWidth = (volStr ? volStr.length + 2 : 0) + zoneName.length;
-  // Progress bar: its line has no right column, so width is independent of rightColWidth
-  const barW          = Math.max(10, termWidth - 22);
+  // Time string computed once so barW can fill the remaining line width exactly
+  const timeStr = `${fmt(pos)} / ${fmt(len)}`;
+  // Available = termWidth - border(2) - padding(2) - indent(3) - gap(2) - time
+  const barW    = Math.max(10, termWidth - 9 - timeStr.length);
 
   return h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: color, paddingX: 1 },
     // Row 1: icon + track title                    vol XX  Zone
@@ -87,11 +88,13 @@ function NowPlayingPanel({ zone, seekPos, termWidth }) {
       h(Text, { dimColor: true }, `   ${[artist, album].filter(Boolean).join(' · ')}`),
       settingsStr ? h(Text, { color: '#0369a1', dimColor: true }, settingsStr) : null
     ),
-    // Row 3:    ████░░░░  0:59 / 3:45
-    h(Box, { marginTop: 1 },
-      h(Text, null, '   '),
-      h(ProgressBar, { position: pos, length: len, width: barW }),
-      h(Text, { dimColor: true }, `  ${fmt(pos)} / ${fmt(len)}`)
+    // Row 3:    ████░░░░░░░░░░░░░░░░░░░░  0:59 / 3:45
+    h(Box, { marginTop: 1, justifyContent: 'space-between' },
+      h(Box, null,
+        h(Text, null, '   '),
+        h(ProgressBar, { position: pos, length: len, width: barW })
+      ),
+      h(Text, { dimColor: true }, timeStr)
     )
   );
 }
