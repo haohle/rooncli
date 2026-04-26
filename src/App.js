@@ -34,7 +34,7 @@ function ProgressBar({ position, length, width }) {
   if (!length || width < 4) return React.createElement(Text, null, '');
   const pct    = Math.min(1, Math.max(0, position / length));
   const filled = Math.round(pct * width);
-  return React.createElement(Text, { color: 'green' }, '█'.repeat(filled) + '░'.repeat(width - filled));
+  return React.createElement(Text, { color: '#16a34a' }, '█'.repeat(filled) + '░'.repeat(width - filled));
 }
 
 // ─── NowPlayingPanel ─────────────────────────────────────────────────────────
@@ -44,48 +44,52 @@ function NowPlayingPanel({ zone, seekPos, termWidth }) {
   const np     = zone?.now_playing ?? null;
   const state  = zone?.state ?? 'stopped';
   const icon   = state === 'playing' ? '▶' : state === 'paused' ? '⏸' : '■';
-  const color  = state === 'playing' ? 'green' : state === 'paused' ? 'yellow' : 'gray';
+  const color  = state === 'playing' ? '#16a34a' : state === 'paused' ? 'yellow' : 'gray';
   const track  = np?.three_line?.line1 ?? '—';
   const artist = np?.three_line?.line2 ?? '';
   const album  = np?.three_line?.line3 ?? '';
   const len    = np?.length ?? 0;
   const pos    = state === 'playing' ? (seekPos ?? np?.seek_position ?? 0) : (np?.seek_position ?? 0);
 
-  // Volume display
   const vol      = zone?.outputs?.[0]?.volume ?? null;
   const maxVol   = zone ? config.getMaxVolume(zone.zone_id) : null;
   const volStr   = !vol ? '' : vol.is_muted ? 'muted' : `vol ${vol.value}${maxVol !== null ? `/${maxVol}` : ''}`;
   const volColor = vol?.is_muted ? 'yellow' : 'gray';
 
-  // Playback settings indicators — only shown when non-default
-  const settings    = zone?.settings;
-  const shuffleOn   = settings?.shuffle === true;
-  const loopMode    = settings?.loop ?? 'disabled';
-  const radioOn     = settings?.auto_radio === true;
-  const loopStr     = loopMode === 'loop' ? '↻ all' : loopMode === 'loop_one' ? '↻ one' : '';
+  const settings     = zone?.settings;
+  const shuffleOn    = settings?.shuffle === true;
+  const loopMode     = settings?.loop ?? 'disabled';
+  const radioOn      = settings?.auto_radio === true;
+  const loopStr      = loopMode === 'loop' ? '↻ all' : loopMode === 'loop_one' ? '↻ one' : '';
   const settingsBits = [shuffleOn ? '⇄ shuffle' : '', loopStr, radioOn ? '⊙ radio' : ''].filter(Boolean);
   const settingsStr  = settingsBits.join('  ');
 
-  // Tighter bar width to leave room for volume string
-  const rightColWidth = (zone?.display_name?.length ?? 0) + (volStr ? volStr.length + 2 : 0);
-  const barW = Math.max(10, termWidth - rightColWidth - 6);
+  const zoneName      = zone?.display_name ?? '';
+  // Right column: "vol XX  ZoneName" — zone on far right
+  const rightColWidth = (volStr ? volStr.length + 2 : 0) + zoneName.length;
+  // Progress bar: its line has no right column, so width is independent of rightColWidth
+  const barW          = Math.max(10, termWidth - 22);
 
   return h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: color, paddingX: 1 },
+    // Row 1: icon + track title                    vol XX  Zone
     h(Box, { justifyContent: 'space-between' },
       h(Box, null,
         h(Text, { color }, `${icon}  `),
         h(Text, { bold: true }, trunc(track, termWidth - rightColWidth - 8))
       ),
       h(Box, null,
-        h(Text, { dimColor: true }, zone?.display_name ?? ''),
-        volStr ? h(Text, { color: volColor, dimColor: !vol?.is_muted }, `  ${volStr}`) : null
+        volStr ? h(Text, { color: volColor, dimColor: !vol?.is_muted }, `${volStr}  `) : null,
+        h(Text, { dimColor: true }, zoneName)
       )
     ),
+    // Row 2:    Artist · Album                     settings
     h(Box, { justifyContent: 'space-between' },
-      h(Text, { dimColor: true }, ` ${[artist, album].filter(Boolean).join(' · ')}`),
-      settingsStr ? h(Text, { color: 'cyan', dimColor: true }, settingsStr) : null
+      h(Text, { dimColor: true }, `   ${[artist, album].filter(Boolean).join(' · ')}`),
+      settingsStr ? h(Text, { color: '#0369a1', dimColor: true }, settingsStr) : null
     ),
+    // Row 3:    ████░░░░  0:59 / 3:45
     h(Box, { marginTop: 1 },
+      h(Text, null, '   '),
       h(ProgressBar, { position: pos, length: len, width: barW }),
       h(Text, { dimColor: true }, `  ${fmt(pos)} / ${fmt(len)}`)
     )
@@ -97,11 +101,11 @@ function NowPlayingPanel({ zone, seekPos, termWidth }) {
 function ZonePicker({ zones, selectedIdx }) {
   const h = React.createElement;
   return h(Box, { flexDirection: 'column', padding: 1 },
-    h(Text, { bold: true, color: 'cyan' }, 'Select a zone to control'),
+    h(Text, { bold: true, color: '#0369a1' }, 'Select a zone to control'),
     h(Text, { dimColor: true }, '─'.repeat(32)),
     ...zones.map((z, i) =>
       h(Box, { key: z.zone_id },
-        h(Text, { color: i === selectedIdx ? 'green' : undefined, bold: i === selectedIdx },
+        h(Text, { color: i === selectedIdx ? '#16a34a' : undefined, bold: i === selectedIdx },
           `${i === selectedIdx ? '▶ ' : '  '}${z.display_name}`
         )
       )
@@ -125,7 +129,7 @@ function QueuePane({ items, selectedIdx, termWidth }) {
 
   rows.push(
     h(Box, { key: 'hdr', justifyContent: 'space-between', marginTop: 1, paddingX: 1 },
-      h(Text, { bold: true, color: 'cyan' }, 'Queue'),
+      h(Text, { bold: true, color: '#0369a1' }, 'Queue'),
       h(Text, { dimColor: true }, countStr)
     )
   );
@@ -153,7 +157,7 @@ function QueuePane({ items, selectedIdx, termWidth }) {
       const line      = artist ? `${title}  ·  ${artist}` : title;
       const dur       = item.length ? fmt(item.length) : '';
       const durWidth  = dur ? dur.length + 2 : 0;
-      const rowColor  = isSel ? 'green' : isCurrent ? undefined : 'gray';
+      const rowColor  = isSel ? '#16a34a' : isCurrent ? undefined : 'gray';
       const dim       = !isSel && !isCurrent;
 
       rows.push(
@@ -202,7 +206,7 @@ function BrowsePane({ stack, browseIdx, browseFilter, filteredItems, loading, te
   // Header: breadcrumb + filter/count
   rows.push(
     h(Box, { key: 'hdr', justifyContent: 'space-between', marginTop: 1, paddingX: 1 },
-      h(Text, { bold: true, color: 'cyan' }, trunc(crumbs, termWidth - 24)),
+      h(Text, { bold: true, color: '#0369a1' }, trunc(crumbs, termWidth - 24)),
       browseFilter
         ? h(Text, { color: 'yellow' }, `"${browseFilter}"  ${filteredItems.length} match${filteredItems.length !== 1 ? 'es' : ''}`)
         : h(Text, { dimColor: true }, `${total} items`)
@@ -233,9 +237,9 @@ function BrowsePane({ stack, browseIdx, browseFilter, filteredItems, loading, te
           // Hotkey number
           isHdr
             ? h(Text, { dimColor: true }, '   ')
-            : h(Text, { color: isSel ? 'green' : 'gray', dimColor: !isSel }, `${n}  `),
+            : h(Text, { color: isSel ? '#16a34a' : 'gray', dimColor: !isSel }, `${n}  `),
           // Selection arrow
-          h(Text, { color: isSel && !isHdr ? 'green' : undefined, dimColor: isHdr },
+          h(Text, { color: isSel && !isHdr ? '#16a34a' : undefined, dimColor: isHdr },
             `${isSel && !isHdr ? '▶ ' : '  '}${trunc(item.title, maxTitle)}`
           )
         ),
@@ -270,7 +274,9 @@ function App() {
 
   // Seek
   const [seekPos, setSeekPos] = useState(null);
-  const seekBase = useRef(null);
+  const seekBase     = useRef(null);
+  const isMountedRef = useRef(true);
+  useEffect(() => { return () => { isMountedRef.current = false; }; }, []);
 
   // Queue
   const [showQueue,  setShowQueue]  = useState(false);
@@ -327,6 +333,7 @@ function App() {
 
     roon.subscribeQueue(zone, 100, (response, data) => {
       if (gen !== queueGenRef.current) return; // stale subscription
+      if (!isMountedRef.current) return;
       if (response === 'Subscribed') {
         setQueueItems(data.items ?? []);
       } else if (response === 'Changed') {
@@ -361,9 +368,10 @@ function App() {
 
   // ── Roon events ───────────────────────────────────────────────────────────
   useEffect(() => {
-    roon.on('paired',   () => { setConnected(true); setMessage(''); });
-    roon.on('unpaired', () => { setConnected(false); setZones([]); });
-    roon.on('zones', (updated) => {
+    const onPaired   = () => { if (isMountedRef.current) { setConnected(true); setMessage(''); } };
+    const onUnpaired = () => { if (isMountedRef.current) { setConnected(false); setZones([]); } };
+    const onZones    = (updated) => {
+      if (!isMountedRef.current) return;
       setZones(updated);
       setHasChosZone(prev => {
         if (prev) {
@@ -374,8 +382,17 @@ function App() {
         setSelectingZone(true);
         return false;
       });
-    });
+    };
+
+    roon.on('paired',   onPaired);
+    roon.on('unpaired', onUnpaired);
+    roon.on('zones',    onZones);
     roon.connect();
+    return () => {
+      roon.off('paired',   onPaired);
+      roon.off('unpaired', onUnpaired);
+      roon.off('zones',    onZones);
+    };
   }, []);
 
   // ── flash ─────────────────────────────────────────────────────────────────
@@ -683,6 +700,7 @@ function App() {
     // Global shortcuts (uppercase = Shift+letter in terminals) — work in all modes
     if (char === 'K') { doControl('next');     return; }
     if (char === 'J') { doControl('previous'); return; }
+    if (char === 'M') { doMuteToggle();                   return; }
     if (char === 'S') { toggleShuffle();                  return; }
     if (char === 'R') { toggleRepeat();                   return; }
     if (char === 'A') { toggleRadio();                    return; }
@@ -767,13 +785,44 @@ function App() {
 
   if (selectingZone) return h(ZonePicker, { zones, selectedIdx: zonePickerIdx });
 
-  // Persistent 2-line help guide
-  const navHints = browseMode
-    ? '[↑↓] navigate  [←] back  [→] options  [enter] play  [1-9] quick-pick  [a-z] filter'
-    : showQueue
-    ? '[↑↓] navigate queue  [enter] play from here  [1-9] quick-pick  [Q] close queue'
-    : '[b] browse  [s] search <q>  [z] zone  vol [n]  maxvol [n]  mute  [q] quit';
-  const playHints = `[space] play/pause  [J] ◀◀  [K] ▶▶  [ vol−  ] vol+  [S] shuffle  [R] repeat  [A] radio  [Q] queue ${showQueue ? 'off' : 'on'}`;
+  // ── hint bar ──────────────────────────────────────────────────────────────
+  const settings    = zone?.settings;
+  const shuffleOn   = settings?.shuffle === true;
+  const loopMode    = settings?.loop ?? 'disabled';
+  const radioOn     = settings?.auto_radio === true;
+  const isPlaying   = zone?.state === 'playing';
+  const isMuted     = zone?.outputs?.[0]?.volume?.is_muted ?? false;
+  const repeatLabel = loopMode === 'loop' ? 'all' : loopMode === 'loop_one' ? 'one' : 'off';
+
+  // Left side: mode-specific nav hints
+  const leftHints = browseMode ? [
+    ['[↑↓] nav', false], ['[←] back', false], ['[→] opts', false],
+    ['[⏎] play', false], ['[1-9] pick', false], ['[a-z] filter', false],
+  ] : showQueue ? [
+    ['[↑↓] nav', false], ['[⏎] play', false], ['[1-9] pick', false], ['[esc] close', false],
+  ] : [
+    ['[b] browse', false], ['[s] search', false], ['[z] zone', false], ['[q] quit', false],
+  ];
+
+  // Right side: playback controls — toggles show bold + ✓ when active
+  const rightHints = [
+    [`[space] ${isPlaying ? 'pause' : 'play'}`, isPlaying],
+    ['[J] ◀  [K] ▶', false],
+    ['[ vol−  ] vol+', false],
+    ['[M] mute', isMuted],
+    ['[S] shuffle', shuffleOn],
+    [`[R] repeat:${repeatLabel}`, loopMode !== 'disabled'],
+    ['[A] radio', radioOn],
+    ['[Q] queue', showQueue],
+  ];
+
+  function renderHints(tokens, pfx) {
+    return tokens.flatMap(([label, active], i) => [
+      i > 0 ? h(Text, { key: `${pfx}s${i}`, dimColor: true }, '  ') : null,
+      h(Text, { key: `${pfx}${i}`, ...(active ? { bold: true } : { dimColor: true }) },
+        active ? `${label} ✓` : label),
+    ].filter(Boolean));
+  }
 
   return h(Box, { flexDirection: 'column' },
     h(NowPlayingPanel, { zone, seekPos, termWidth }),
@@ -790,16 +839,18 @@ function App() {
 
     !browseMode && !showQueue
       ? h(Box, { paddingX: 1 },
-          h(Text, { color: 'green', bold: true }, 'roon'),
+          h(Text, { color: '#16a34a', bold: true }, 'roon'),
           h(Text, { dimColor: true }, ' › '),
           h(Text, null, input),
-          h(Text, { color: 'green' }, '▌')
+          h(Text, { color: '#16a34a' }, '▌')
         )
       : null,
 
     h(Text, { key: 'sep', dimColor: true }, ' ' + '─'.repeat(termWidth - 2)),
-    h(Box, { paddingX: 1 }, h(Text, { dimColor: true }, navHints)),
-    h(Box, { paddingX: 1 }, h(Text, { dimColor: true }, playHints))
+    h(Box, { paddingX: 1, justifyContent: 'space-between' },
+      h(Box, { key: 'left'  }, ...renderHints(leftHints,  'l')),
+      h(Box, { key: 'right' }, ...renderHints(rightHints, 'r'))
+    )
   );
 }
 
