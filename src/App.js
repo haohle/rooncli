@@ -155,16 +155,25 @@ function ZonePicker({ zones, selectedIdx }) {
 
 // ─── QueuePane ───────────────────────────────────────────────────────────────
 
-const QUEUE_VISIBLE = 9; // matches number hotkeys 1–9
+const QUEUE_VISIBLE   = 9; // matches number hotkeys 1–9
+const HISTORY_DEFAULT = 3; // history items shown before user navigates up into them
 
-function QueuePane({ items, selectedIdx, termWidth }) {
+function QueuePane({ items, selectedIdx, history, showAllHistory, termWidth }) {
   const h = React.createElement;
+
+  // Build combined display: history (oldest→newest) then queue items
+  const visibleHistory = showAllHistory ? history : history.slice(0, HISTORY_DEFAULT);
+  const historyDisplay = [...visibleHistory].reverse(); // oldest at top, newest adjacent to queue
+  const H        = historyDisplay.length;
+  const dispItems = [...historyDisplay, ...items];
+  const dispIdx   = selectedIdx + H; // absolute cursor in combined list
+  const dispLen   = dispItems.length;
 
   const rows = [];
 
-  const countStr = items.length === 0
-    ? '0 items'
-    : `${selectedIdx + 1} / ${items.length}`;
+  const countStr = selectedIdx < 0
+    ? `history · ${Math.abs(selectedIdx)} of ${history.length}`
+    : items.length === 0 ? '0 items' : `${selectedIdx + 1} / ${items.length}`;
 
   rows.push(
     h(Box, { key: 'hdr', justifyContent: 'space-between', marginTop: 1, paddingX: 1 },
@@ -174,44 +183,66 @@ function QueuePane({ items, selectedIdx, termWidth }) {
   );
   rows.push(h(Text, { key: 'div1', dimColor: true }, ' ' + '─'.repeat(termWidth - 2)));
 
-  if (items.length === 0) {
+  if (dispLen === 0) {
     rows.push(h(Box, { key: 'empty', paddingX: 2 }, h(Text, { dimColor: true }, 'Queue is empty')));
   } else {
-    const ws       = getWinStart(selectedIdx, items.length);
-    const winEnd   = Math.min(items.length, Math.max(ws + QUEUE_VISIBLE, QUEUE_VISIBLE));
+    const ws       = getWinStart(dispIdx, dispLen);
+    const winEnd   = Math.min(dispLen, Math.max(ws + QUEUE_VISIBLE, QUEUE_VISIBLE));
     const hasAbove = ws > 0;
-    const hasBelow = winEnd < items.length;
+    const hasBelow = winEnd < dispLen;
+    const canExpand = !showAllHistory && history.length > HISTORY_DEFAULT;
 
-    if (hasAbove) rows.push(
-      h(Box, { key: 'above', paddingX: 2 }, h(Text, { dimColor: true }, `↑ ${ws} more`))
-    );
+    if (hasAbove) {
+      rows.push(h(Box, { key: 'above', paddingX: 2 }, h(Text, { dimColor: true }, `↑ ${ws} more`)));
+    } else if (canExpand && H > 0) {
+      rows.push(h(Box, { key: 'expand', paddingX: 2 },
+        h(Text, { dimColor: true }, `↑ ${history.length - HISTORY_DEFAULT} more earlier`)));
+    }
 
     for (let i = ws; i < winEnd; i++) {
-      const item      = items[i];
-      const isSel     = i === selectedIdx;
-      const isCurrent = i === 0;
+      const isHist    = i < H;
+      const isSel     = i === dispIdx;
+      const isCurrent = !isHist && (i - H) === 0;
       const n         = i - ws + 1;
-      const title     = item.three_line?.line1 ?? item.two_line?.line1 ?? item.one_line?.line1 ?? '—';
-      const artist    = item.three_line?.line2 ?? item.two_line?.line2 ?? '';
-      const line      = artist ? `${title}  ·  ${artist}` : title;
-      const dur       = item.length ? fmt(item.length) : '';
-      const durWidth  = dur ? dur.length + 2 : 0;
-      const rowColor  = isSel ? '#16a34a' : isCurrent ? undefined : 'gray';
-      const dim       = !isSel && !isCurrent;
+
+      let title, artist, dur;
+      if (isHist) {
+        const np = historyDisplay[i];
+        title  = np?.three_line?.line1 ?? np?.two_line?.line1 ?? np?.one_line?.line1 ?? '—';
+        artist = np?.three_line?.line2 ?? np?.two_line?.line2 ?? '';
+        dur    = np?.length ? fmt(np.length) : '';
+      } else {
+        const item = items[i - H];
+        title  = item.three_line?.line1 ?? item.two_line?.line1 ?? item.one_line?.line1 ?? '—';
+        artist = item.three_line?.line2 ?? item.two_line?.line2 ?? '';
+        dur    = item.length ? fmt(item.length) : '';
+      }
+
+      const line     = artist ? `${title}  ·  ${artist}` : title;
+      const durWidth = dur ? dur.length + 2 : 0;
+      const rowColor = isSel ? '#16a34a' : isHist ? undefined : isCurrent ? undefined : 'gray';
+      const dim      = !isSel && (isHist || !isCurrent);
+      const marker   = isSel ? '▶ ' : isHist ? '◀ ' : isCurrent ? '▶ ' : '  ';
 
       rows.push(
-        h(Box, { key: `q${i}`, paddingX: 1, justifyContent: 'space-between' },
+        h(Box, { key: `qi${i}`, paddingX: 1, justifyContent: 'space-between' },
           h(Text, { color: rowColor, dimColor: dim },
-            `${n}  ${isSel ? '▶ ' : isCurrent ? '▶ ' : '  '}${trunc(line, termWidth - 10 - durWidth)}`
+            `${n}  ${marker}${trunc(line, termWidth - 10 - durWidth)}`
           ),
           dur ? h(Text, { color: rowColor, dimColor: true }, dur) : null
         )
       );
+
+      // Divider between last history item and first queue item
+      if (isHist && i === H - 1 && i + 1 < winEnd) {
+        rows.push(h(Text, { key: 'hist-sep', dimColor: true }, ' ' + '─'.repeat(termWidth - 2)));
+      }
     }
 
-    if (hasBelow) rows.push(
-      h(Box, { key: 'below', paddingX: 2 }, h(Text, { dimColor: true }, `↓ ${items.length - winEnd} more`))
-    );
+    if (hasBelow) {
+      rows.push(h(Box, { key: 'below', paddingX: 2 },
+        h(Text, { dimColor: true }, `↓ ${dispLen - winEnd} more`)));
+    }
   }
 
   rows.push(h(Text, { key: 'div2', dimColor: true }, ' ' + '─'.repeat(termWidth - 2)));
@@ -318,12 +349,15 @@ function App() {
   useEffect(() => { return () => { isMountedRef.current = false; }; }, []);
 
   // Queue
-  const [showQueue,  setShowQueue]  = useState(false);
-  const [queueItems, setQueueItems] = useState([]);
-  const [queueIdx,   setQueueIdx]   = useState(0);
-  const [queueSubKey, setQueueSubKey] = useState(0); // increment to force re-subscription
+  const [showQueue,      setShowQueue]      = useState(false);
+  const [queueItems,     setQueueItems]     = useState([]);
+  const [queueIdx,       setQueueIdx]       = useState(0); // 0=first queue item, negative=history
+  const [queueSubKey,    setQueueSubKey]    = useState(0); // increment to force re-subscription
+  const [history,        setHistory]        = useState([]); // np snapshots, newest-first
+  const [showAllHistory, setShowAllHistory] = useState(false);
   const queueGenRef   = useRef(0);   // invalidates stale subscription callbacks
   const prevTrackRef  = useRef(null);
+  const prevNpDataRef = useRef(null); // full np snapshot for the previous track
 
   // Browse
   const [browseMode,    setBrowseMode]    = useState(false);
@@ -396,13 +430,18 @@ function App() {
     });
   }, [connected, zone?.zone_id, queueSubKey]);
 
-  // Re-subscribe when the playing track changes so queue always reflects current position
+  // Re-subscribe when the playing track changes so queue always reflects current position.
+  // Also push the outgoing track into listening history.
   useEffect(() => {
     const track = np?.one_line?.line1 ?? null;
     if (prevTrackRef.current !== null && prevTrackRef.current !== track) {
       setQueueSubKey(k => k + 1);
+      if (prevNpDataRef.current) {
+        setHistory(h => [prevNpDataRef.current, ...h].slice(0, 100));
+      }
     }
-    prevTrackRef.current = track;
+    prevTrackRef.current  = track;
+    prevNpDataRef.current = np;
   }, [np?.one_line?.line1]);
 
   // ── Roon events ───────────────────────────────────────────────────────────
@@ -557,6 +596,9 @@ function App() {
 
   // Reset cursor whenever the queue list itself changes
   useEffect(() => { setQueueIdx(0); }, [queueItems]);
+
+  // Reset history expansion when the queue panel is closed
+  useEffect(() => { if (!showQueue) { setShowAllHistory(false); setQueueIdx(0); } }, [showQueue]);
 
   // ── queue playback ────────────────────────────────────────────────────────
   function playFromQueue(idx) {
@@ -786,15 +828,36 @@ function App() {
 
     // ── Queue mode ─────────────────────────────────────────────────────────
     if (showQueue) {
-      if (key.escape)    { setShowQueue(false); return; }
-      if (key.upArrow)   { setQueueIdx(i => Math.max(0, i - 1)); return; }
+      if (key.escape) { setShowQueue(false); return; }
+
+      if (key.upArrow) {
+        const visHist = showAllHistory ? history.length : Math.min(history.length, 3);
+        if (queueIdx > -visHist) {
+          setQueueIdx(i => i - 1);
+        } else if (!showAllHistory && history.length > 3) {
+          // Reached top of 3-item default — expand to full history and step up
+          setShowAllHistory(true);
+          setQueueIdx(i => i - 1);
+        }
+        return;
+      }
+
       if (key.downArrow) { setQueueIdx(i => Math.min(queueItems.length - 1, i + 1)); return; }
-      if (key.return)    { playFromQueue(queueIdx); return; }
+
+      if (key.return) {
+        if (queueIdx >= 0) playFromQueue(queueIdx);
+        else flash('History — browse to queue a previous track');
+        return;
+      }
+
       if (char >= '1' && char <= '9') {
-        const n         = parseInt(char) - 1;
-        const ws        = getWinStart(queueIdx, queueItems.length);
-        const targetIdx = ws + n;
-        if (targetIdx < queueItems.length) playFromQueue(targetIdx);
+        const n        = parseInt(char) - 1;
+        const visHist  = showAllHistory ? history.length : Math.min(history.length, 3);
+        const dispIdx  = queueIdx + visHist;
+        const dispLen  = visHist + queueItems.length;
+        const ws       = getWinStart(dispIdx, dispLen);
+        const target   = ws + n - visHist; // convert back to queue-relative
+        if (target >= 0 && target < queueItems.length) playFromQueue(target);
         return;
       }
       if (char === ' ')  { doControl(zone?.state === 'playing' ? 'pause' : 'play'); return; }
@@ -873,7 +936,7 @@ function App() {
     h(NowPlayingPanel, { zone, seekPos, termWidth }),
 
     showQueue
-      ? h(QueuePane, { items: queueItems, selectedIdx: queueIdx, termWidth })
+      ? h(QueuePane, { items: queueItems, selectedIdx: queueIdx, history, showAllHistory, termWidth })
       : null,
 
     browseMode
