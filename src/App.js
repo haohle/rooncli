@@ -89,15 +89,16 @@ function NowPlayingPanel({ zone, seekPos, termWidth }) {
   }, [vol?.value]);
 
   // Normalise volume position/length for the bar (handles both % and dB zones)
+  // Prefer user-configured maxVol ceiling over hardware limits
   const volBarPos = vol?.type === 'db'
     ? (vol.value - (vol.min ?? -80))
     : (vol?.value ?? 0);
   const volBarLen = vol?.type === 'db'
     ? ((vol.max ?? 0) - (vol.min ?? -80))
-    : (vol?.max ?? vol?.hard_limit_max ?? 100);
+    : (maxVol ?? vol?.max ?? vol?.hard_limit_max ?? 100);
 
   const volDisplayStr = vol != null
-    ? `${Math.round(vol.value)} / ${vol.hard_limit_max ?? vol.max ?? 100}`
+    ? `${Math.round(vol.value)} / ${maxVol ?? vol.hard_limit_max ?? vol.max ?? 100}`
     : '';
 
   return h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: color, paddingX: 1 },
