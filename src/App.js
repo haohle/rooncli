@@ -473,6 +473,12 @@ function App() {
   function doVolumeStep(delta) {
     const vol = volOutput()?.volume;
     if (!vol) return;
+    const limit = config.getMaxVolume(zone.zone_id);
+    // If stepping down from above the ceiling, snap to the ceiling first
+    if (delta < 0 && limit !== null && vol.value > limit) {
+      doVolumeSet(limit);
+      return;
+    }
     const step   = delta > 0 ? (vol.step ?? 5) : -(vol.step ?? 5);
     const target = Math.max(vol.min, Math.min(vol.max, vol.value + step));
     doVolumeSet(target);
