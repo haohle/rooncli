@@ -2,8 +2,6 @@
 
 A terminal UI for controlling Roon. Browse your library, manage the queue, and control playback without leaving the keyboard.
 
-![shell mode showing now-playing panel and command prompt](https://placeholder)
-
 ## Requirements
 
 - [Node.js](https://nodejs.org) 18 or later
