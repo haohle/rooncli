@@ -37,31 +37,6 @@ function ProgressBar({ position, length, width, color = '#16a34a' }) {
   return React.createElement(Text, { color }, '█'.repeat(filled) + '░'.repeat(width - filled));
 }
 
-// ─── Big Digit Font (3-row, 6-char-wide per digit) ───────────────────────────
-// Filled block style: each pixel = 2 × '█', each gap = 2 spaces.
-
-const BIG_DIGITS = {
-  ' ': ['      ', '      ', '      '],
-  '-': ['      ', '██████', '      '],
-  '0': ['██████', '██  ██', '██████'],
-  '1': ['    ██', '    ██', '    ██'],
-  '2': ['██████', '  ████', '████  '],
-  '3': ['██████', '  ████', '  ████'],
-  '4': ['██  ██', '██████', '    ██'],
-  '5': ['██████', '████  ', '  ████'],
-  '6': ['██████', '████  ', '██████'],
-  '7': ['██████', '    ██', '    ██'],
-  '8': ['██████', '██████', '██████'],
-  '9': ['██████', '██████', '    ██'],
-};
-
-function bigNumRows(n) {
-  const chars = String(Math.round(n)).split('');
-  return [0, 1, 2].map(row =>
-    chars.map(c => (BIG_DIGITS[c] ?? ['        ', '        ', '        '])[row]).join('  ')
-  );
-}
-
 // ─── NowPlayingPanel ─────────────────────────────────────────────────────────
 
 function NowPlayingPanel({ zone, seekPos, termWidth }) {
@@ -121,14 +96,15 @@ function NowPlayingPanel({ zone, seekPos, termWidth }) {
     ? ((vol.max ?? 0) - (vol.min ?? -80))
     : (vol?.max ?? vol?.hard_limit_max ?? 100);
 
-  const bigRows = showVolOverlay && vol != null ? bigNumRows(vol.value) : null;
+  const volDisplayStr = vol != null
+    ? `${Math.round(vol.value)} / ${vol.hard_limit_max ?? vol.max ?? 100}`
+    : '';
 
   return h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: color, paddingX: 1 },
-    ...(bigRows ? [
-      h(Box, { key: 'vr0', justifyContent: 'center' }, h(Text, { color }, bigRows[0])),
-      h(Box, { key: 'vr1', justifyContent: 'center' }, h(Text, { color }, bigRows[1])),
-      h(Box, { key: 'vr2', justifyContent: 'center' }, h(Text, { color }, bigRows[2])),
-      h(Box, { key: 'vb'  }, h(ProgressBar, { position: volBarPos, length: volBarLen, width: termWidth - 4, color })),
+    ...(showVolOverlay && vol != null ? [
+      h(Box, { key: 'vs' }, h(Text, null, ' ')),
+      h(Box, { key: 'vn', justifyContent: 'center' }, h(Text, { color, bold: true }, volDisplayStr)),
+      h(Box, { key: 'vb', marginTop: 1 }, h(ProgressBar, { position: volBarPos, length: volBarLen, width: termWidth - 4, color })),
     ] : [
       // Row 1: icon + track title                    vol XX  Zone
       h(Box, { key: 'r1', justifyContent: 'space-between' },
