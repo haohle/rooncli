@@ -2,6 +2,9 @@
 
 A terminal UI for controlling Roon. Browse your library, manage the queue, and control playback without leaving the keyboard.
 
+<img width="983" height="655" alt="image" src="https://github.com/user-attachments/assets/fd903ac0-8d1c-4064-850a-4bf3da147ada" />
+
+
 ## Requirements
 
 - [Node.js](https://nodejs.org) 18 or later
