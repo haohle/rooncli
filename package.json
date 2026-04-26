@@ -1,0 +1,25 @@
+{
+  "name": "rooncli",
+  "version": "1.0.0",
+  "description": "Terminal UI for controlling Roon",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "postinstall": "node patch-roon.js"
+  },
+  "bin": {
+    "roon": "./index.js"
+  },
+  "keywords": ["roon", "music", "cli", "tui"],
+  "author": "hao@hey.com",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@roonlabs/node-roon-api": "^1.2.3",
+    "ink": "^3.2.0",
+    "node-roon-api-browse": "github:RoonLabs/node-roon-api-browse",
+    "node-roon-api-status": "github:RoonLabs/node-roon-api-status",
+    "node-roon-api-transport": "github:RoonLabs/node-roon-api-transport",
+    "react": "^17.0.2"
+  }
+}

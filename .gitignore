@@ -1,0 +1,7 @@
+node_modules/
+
+# Roon API drops config.json in the CWD when run before the home-dir patch takes effect
+config.json
+
+# Claude Code session data
+.claude/
