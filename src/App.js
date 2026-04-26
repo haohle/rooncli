@@ -355,8 +355,10 @@ function App() {
   const [queueSubKey,    setQueueSubKey]    = useState(0); // increment to force re-subscription
   const [history,        setHistory]        = useState([]); // np snapshots, newest-first
   const [showAllHistory, setShowAllHistory] = useState(false);
-  const queueGenRef   = useRef(0);   // invalidates stale subscription callbacks
-  const prevTrackRef  = useRef(null);
+  const queueGenRef     = useRef(0);   // invalidates stale subscription callbacks
+  const prevTrackRef    = useRef(null);
+  const queueItemsRef   = useRef([]);  // mirror of queueItems readable in async callbacks
+  const skipToQueueRef  = useRef(false); // true while a play-from-here jump is in flight
   const prevNpDataRef = useRef(null); // full np snapshot for the previous track
 
   // Browse
@@ -408,23 +410,35 @@ function App() {
       if (gen !== queueGenRef.current) return; // stale subscription
       if (!isMountedRef.current) return;
       if (response === 'Subscribed') {
-        setQueueItems(data.items ?? []);
+        const items = data.items ?? [];
+        queueItemsRef.current = items;
+        setQueueItems(items);
       } else if (response === 'Changed') {
-        if (data.items) {
+        if (data.changes) {
+          let next = [...queueItemsRef.current];
+          const skipped = [];
+          for (const change of data.changes) {
+            if (change.operation === 'remove') {
+              if (change.index === 0 && skipToQueueRef.current) {
+                skipped.push(...next.slice(0, change.count));
+                skipToQueueRef.current = false;
+              }
+              next.splice(change.index, change.count);
+            } else if (change.operation === 'insert') {
+              next.splice(change.index, 0, ...change.items);
+            }
+          }
+          queueItemsRef.current = next;
+          setQueueItems(next);
+          if (skipped.length > 1) {
+            // Last item in skipped is the jump target (now playing) — exclude it.
+            // Remaining items were truly skipped; add newest-first (reverse queue order).
+            const trulySkipped = skipped.slice(0, -1);
+            setHistory(h => [...trulySkipped.reverse(), ...h].slice(0, 100));
+          }
+        } else if (data.items) {
+          queueItemsRef.current = data.items;
           setQueueItems(data.items);
-        } else {
-          setQueueItems(prev => {
-            let next = [...prev];
-            if (data.items_removed) {
-              const removed = new Set(data.items_removed.map(String));
-              next = next.filter(i => !removed.has(String(i.queue_item_id)));
-            }
-            if (data.items_added) {
-              // items_added is an array of queue item objects (not { queue_item_id, item } wrappers)
-              next.push(...data.items_added);
-            }
-            return next;
-          });
         }
       }
     });
@@ -604,64 +618,77 @@ function App() {
   function playFromQueue(idx) {
     const item = queueItems[idx];
     if (!item || !zone) return;
+    skipToQueueRef.current = true;
     roon.playFromHere(zone, item.queue_item_id)
       .then(() => flash(`Playing: ${item.three_line?.line1 ?? item.two_line?.line1 ?? 'track'}`))
-      .catch(err => flash(`Error: ${err.message}`));
+      .catch(err => { skipToQueueRef.current = false; flash(`Error: ${err.message}`); });
   }
 
   // Play a history item by searching Roon's library and executing Play Now
-  async function playHistoryItem(np) {
+  // Search for a track and execute a chosen action from its action list.
+  // actionTest selects the action item; returns true on success.
+  async function browseAndAct(np, actionTest) {
     const title  = np?.three_line?.line1 ?? np?.two_line?.line1 ?? np?.one_line?.line1 ?? '';
     const artist = np?.three_line?.line2 ?? np?.two_line?.line2 ?? '';
+    if (!title) return false;
+
+    const query         = [title, artist].filter(Boolean).join(' ');
+    const searchResult  = await browseApi.search(query, zoneOrOutputId);
+    const tracksSection = searchResult.items.find(i => i.hint === 'list' && /track|song/i.test(i.title));
+    if (!tracksSection) return false;
+
+    const tracksResult = await browseApi.browseItem(
+      tracksSection, searchResult.multiSessionKey, searchResult.hierarchy, zoneOrOutputId
+    );
+    const match = tracksResult.items?.find(
+      i => i.hint === 'action_list' && i.title?.toLowerCase() === title.toLowerCase()
+    ) ?? tracksResult.items?.find(i => i.hint === 'action_list');
+    if (!match) return false;
+
+    let level = await browseApi.browseItem(
+      match, tracksResult.multiSessionKey, tracksResult.hierarchy, zoneOrOutputId
+    );
+    if (level.action !== 'list') return true; // Roon acted directly
+
+    // Streaming/radio tracks sometimes nest one extra action_list level
+    if (!level.items?.some(i => i.hint === 'action')) {
+      const nested = level.items?.find(i => i.hint === 'action_list');
+      if (nested) {
+        const deeper = await browseApi.browseItem(nested, level.multiSessionKey, level.hierarchy, zoneOrOutputId);
+        if (deeper.action !== 'list') return true;
+        level = deeper;
+      }
+    }
+
+    const action = level.items?.find(actionTest);
+    if (!action) return false;
+    await browseApi.browseItem(action, level.multiSessionKey, level.hierarchy, zoneOrOutputId);
+    return true;
+  }
+
+  // Play a history item and restore subsequent history + existing queue.
+  // history is newest-first; historyIdx 0 = most recent.
+  // We add items newest-first using "Add Next" so the queue ends up:
+  //   selected → newer history items → original queue
+  async function playHistoryItem(np, historyIdx) {
+    const title = np?.three_line?.line1 ?? np?.two_line?.line1 ?? np?.one_line?.line1 ?? '';
     if (!title || !zone) return;
 
-    flash('Searching…');
-    try {
-      const query        = [title, artist].filter(Boolean).join(' ');
-      const searchResult = await browseApi.search(query, zoneOrOutputId);
+    const toAdd = history.slice(0, historyIdx + 1); // [newest, …, selected]
+    flash(toAdd.length > 1 ? `Building queue…` : 'Searching…');
 
-      require('fs').writeFileSync('/tmp/roon-history-search.json',
-        JSON.stringify({ query, items: searchResult.items?.map(i => ({ hint: i.hint, title: i.title, item_key: i.item_key })) }, null, 2));
+    const addNextTest = i => i.hint === 'action' && /add next/i.test(i.title);
+    let added = 0;
+    for (const item of toAdd) {
+      try { if (await browseAndAct(item, addNextTest)) added++; }
+      catch { /* skip tracks that can't be found */ }
+    }
 
-      // Search results are grouped into sections (Tracks, Albums, Artists…)
-      const tracksSection = searchResult.items.find(
-        i => i.hint === 'list' && /track|song/i.test(i.title)
-      );
-      if (!tracksSection) { flash(`Track not found (sections: ${searchResult.items?.map(i=>i.title).join(', ')})`); return; }
-
-      const tracksResult = await browseApi.browseItem(
-        tracksSection, searchResult.multiSessionKey, searchResult.hierarchy, zoneOrOutputId
-      );
-
-      require('fs').writeFileSync('/tmp/roon-history-tracks.json',
-        JSON.stringify({ items: tracksResult.items?.map(i => ({ hint: i.hint, title: i.title })) }, null, 2));
-
-      // Prefer exact title match, fall back to first action_list
-      const match = tracksResult.items?.find(
-        i => i.hint === 'action_list' && i.title?.toLowerCase() === title.toLowerCase()
-      ) ?? tracksResult.items?.find(i => i.hint === 'action_list');
-
-      if (!match) { flash('Track not found in library'); return; }
-
-      const actionsResult = await browseApi.browseItem(
-        match, tracksResult.multiSessionKey, tracksResult.hierarchy, zoneOrOutputId
-      );
-
-      require('fs').writeFileSync('/tmp/roon-history-actions.json',
-        JSON.stringify({ items: actionsResult.items?.map(i => ({ hint: i.hint, title: i.title })) }, null, 2));
-
-      const playNow = actionsResult.items?.find(i => i.hint === 'action' && /play now/i.test(i.title))
-                   ?? actionsResult.items?.find(i => i.hint === 'action' && /play/i.test(i.title))
-                   ?? actionsResult.items?.find(i => i.hint === 'action');
-
-      if (!playNow) { flash('No play action found'); return; }
-
-      await browseApi.browseItem(
-        playNow, actionsResult.multiSessionKey, actionsResult.hierarchy, zoneOrOutputId
-      );
+    if (added > 0) {
+      await roon.control(zone, 'next');
       flash(`▶  ${title}`);
-    } catch (err) {
-      flash(`Error: ${err.message}`);
+    } else {
+      flash('Track not found');
     }
   }
 
@@ -904,8 +931,9 @@ function App() {
         if (queueIdx >= 0) {
           playFromQueue(queueIdx);
         } else {
-          const np = history[-queueIdx - 1]; // queueIdx -1 → history[0] (most recent)
-          if (np) playHistoryItem(np);
+          const histIdx = -queueIdx - 1; // queueIdx -1 → history[0] (most recent)
+          const np = history[histIdx];
+          if (np) playHistoryItem(np, histIdx);
         }
         return;
       }
@@ -967,7 +995,8 @@ function App() {
     ['[↑↓] nav', false], ['[←] back', false], ['[→] opts', false],
     ['[⏎] play', false], ['[1-9] pick', false], ['[a-z] filter', false],
   ] : showQueue ? [
-    ['[↑↓] nav', false], ['[⏎] play', false], ['[1-9] pick', false], ['[esc] close', false],
+    ['[↑↓] nav', false], ['[⏎] play', false], ['[1-9] pick', false],
+    ['[esc] close', false],
   ] : [
     ['[b] browse', false], ['[s] search', false], ['[z] zone', false], ['[q] quit', false],
   ];
