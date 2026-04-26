@@ -37,6 +37,30 @@ function ProgressBar({ position, length, width }) {
   return React.createElement(Text, { color: '#16a34a' }, '█'.repeat(filled) + '░'.repeat(width - filled));
 }
 
+// ─── Big Digit Font (3-row, 8-char-wide per digit) ───────────────────────────
+// Each character = left(2) + middle(4) + right(2), derived from 7-segment layout.
+
+const BIG_DIGITS = {
+  '-': ['        ', '  ____  ', '        '],
+  '0': ['||____||', '||    ||', '||____||'],
+  '1': ['      ||', '      ||', '      ||'],
+  '2': ['  ____||', '||____||', '||____  '],
+  '3': ['  ____||', '  ____||', '  ____||'],
+  '4': ['||    ||', '||____||', '      ||'],
+  '5': ['||____  ', '||____||', '  ____||'],
+  '6': ['||____  ', '||____||', '||____||'],
+  '7': ['  ____||', '      ||', '      ||'],
+  '8': ['||____||', '||____||', '||____||'],
+  '9': ['||____||', '||____||', '  ____||'],
+};
+
+function bigNumRows(n) {
+  const chars = String(Math.round(n)).split('');
+  return [0, 1, 2].map(row =>
+    chars.map(c => (BIG_DIGITS[c] ?? ['        ', '        ', '        '])[row]).join('  ')
+  );
+}
+
 // ─── NowPlayingPanel ─────────────────────────────────────────────────────────
 
 function NowPlayingPanel({ zone, seekPos, termWidth }) {
@@ -71,31 +95,65 @@ function NowPlayingPanel({ zone, seekPos, termWidth }) {
   // Available = termWidth - border(2) - padding(2) - indent(3) - gap(2) - time
   const barW    = Math.max(10, termWidth - 9 - timeStr.length);
 
+  // Volume overlay: shown for 2 s after any volume change
+  const [showVolOverlay, setShowVolOverlay] = useState(false);
+  const volOverlayTimerRef = useRef(null);
+  const prevVolRef = useRef(null);
+
+  useEffect(() => () => clearTimeout(volOverlayTimerRef.current), []);
+
+  useEffect(() => {
+    const cur = vol?.value;
+    if (cur != null && prevVolRef.current !== null && prevVolRef.current !== cur) {
+      setShowVolOverlay(true);
+      clearTimeout(volOverlayTimerRef.current);
+      volOverlayTimerRef.current = setTimeout(() => setShowVolOverlay(false), 2000);
+    }
+    if (cur != null) prevVolRef.current = cur;
+  }, [vol?.value]);
+
+  // Normalise volume position/length for the bar (handles both % and dB zones)
+  const volBarPos = vol?.type === 'db'
+    ? (vol.value - (vol.min ?? -80))
+    : (vol?.value ?? 0);
+  const volBarLen = vol?.type === 'db'
+    ? ((vol.max ?? 0) - (vol.min ?? -80))
+    : (vol?.max ?? vol?.hard_limit_max ?? 100);
+
+  const bigRows = showVolOverlay && vol != null ? bigNumRows(vol.value) : null;
+
   return h(Box, { flexDirection: 'column', borderStyle: 'round', borderColor: color, paddingX: 1 },
-    // Row 1: icon + track title                    vol XX  Zone
-    h(Box, { justifyContent: 'space-between' },
-      h(Box, null,
-        h(Text, { color }, `${icon}  `),
-        h(Text, { bold: true }, trunc(track, termWidth - rightColWidth - 8))
+    ...(bigRows ? [
+      h(Box, { key: 'vr0', justifyContent: 'center' }, h(Text, { color }, bigRows[0])),
+      h(Box, { key: 'vr1', justifyContent: 'center' }, h(Text, { color }, bigRows[1])),
+      h(Box, { key: 'vr2', justifyContent: 'center' }, h(Text, { color }, bigRows[2])),
+      h(Box, { key: 'vb'  }, h(ProgressBar, { position: volBarPos, length: volBarLen, width: termWidth - 4 })),
+    ] : [
+      // Row 1: icon + track title                    vol XX  Zone
+      h(Box, { key: 'r1', justifyContent: 'space-between' },
+        h(Box, null,
+          h(Text, { color }, `${icon}  `),
+          h(Text, { bold: true }, trunc(track, termWidth - rightColWidth - 8))
+        ),
+        h(Box, null,
+          volStr ? h(Text, { color: volColor, dimColor: !vol?.is_muted }, `${volStr}  `) : null,
+          h(Text, { dimColor: true }, zoneName)
+        )
       ),
-      h(Box, null,
-        volStr ? h(Text, { color: volColor, dimColor: !vol?.is_muted }, `${volStr}  `) : null,
-        h(Text, { dimColor: true }, zoneName)
-      )
-    ),
-    // Row 2:    Artist · Album                     settings
-    h(Box, { justifyContent: 'space-between' },
-      h(Text, { dimColor: true }, `   ${[artist, album].filter(Boolean).join(' · ')}`),
-      settingsStr ? h(Text, { color: '#0369a1', dimColor: true }, settingsStr) : null
-    ),
-    // Row 3:    ████░░░░░░░░░░░░░░░░░░░░  0:59 / 3:45
-    h(Box, { marginTop: 1, justifyContent: 'space-between' },
-      h(Box, null,
-        h(Text, null, '   '),
-        h(ProgressBar, { position: pos, length: len, width: barW })
+      // Row 2:    Artist · Album                     settings
+      h(Box, { key: 'r2', justifyContent: 'space-between' },
+        h(Text, { dimColor: true }, `   ${[artist, album].filter(Boolean).join(' · ')}`),
+        settingsStr ? h(Text, { color: '#0369a1', dimColor: true }, settingsStr) : null
       ),
-      h(Text, { dimColor: true }, timeStr)
-    )
+      // Row 3:    ████░░░░░░░░░░░░░░░░░░░░  0:59 / 3:45
+      h(Box, { key: 'r3', marginTop: 1, justifyContent: 'space-between' },
+        h(Box, null,
+          h(Text, null, '   '),
+          h(ProgressBar, { position: pos, length: len, width: barW })
+        ),
+        h(Text, { dimColor: true }, timeStr)
+      ),
+    ])
   );
 }
 
