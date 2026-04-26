@@ -620,13 +620,21 @@ function App() {
       const query        = [title, artist].filter(Boolean).join(' ');
       const searchResult = await browseApi.search(query, zoneOrOutputId);
 
+      require('fs').writeFileSync('/tmp/roon-history-search.json',
+        JSON.stringify({ query, items: searchResult.items?.map(i => ({ hint: i.hint, title: i.title, item_key: i.item_key })) }, null, 2));
+
       // Search results are grouped into sections (Tracks, Albums, Artists…)
-      const tracksSection = searchResult.items.find(i => /^tracks?$/i.test(i.title));
-      if (!tracksSection) { flash('Track not found in library'); return; }
+      const tracksSection = searchResult.items.find(
+        i => i.hint === 'list' && /track|song/i.test(i.title)
+      );
+      if (!tracksSection) { flash(`Track not found (sections: ${searchResult.items?.map(i=>i.title).join(', ')})`); return; }
 
       const tracksResult = await browseApi.browseItem(
         tracksSection, searchResult.multiSessionKey, searchResult.hierarchy, zoneOrOutputId
       );
+
+      require('fs').writeFileSync('/tmp/roon-history-tracks.json',
+        JSON.stringify({ items: tracksResult.items?.map(i => ({ hint: i.hint, title: i.title })) }, null, 2));
 
       // Prefer exact title match, fall back to first action_list
       const match = tracksResult.items?.find(
@@ -638,6 +646,9 @@ function App() {
       const actionsResult = await browseApi.browseItem(
         match, tracksResult.multiSessionKey, tracksResult.hierarchy, zoneOrOutputId
       );
+
+      require('fs').writeFileSync('/tmp/roon-history-actions.json',
+        JSON.stringify({ items: actionsResult.items?.map(i => ({ hint: i.hint, title: i.title })) }, null, 2));
 
       const playNow = actionsResult.items?.find(i => i.hint === 'action' && /play now/i.test(i.title))
                    ?? actionsResult.items?.find(i => i.hint === 'action' && /play/i.test(i.title))
