@@ -30,28 +30,29 @@ function getWinStart(selIdx, total) {
 
 // ─── ProgressBar ─────────────────────────────────────────────────────────────
 
-function ProgressBar({ position, length, width }) {
+function ProgressBar({ position, length, width, color = '#16a34a' }) {
   if (!length || width < 4) return React.createElement(Text, null, '');
   const pct    = Math.min(1, Math.max(0, position / length));
   const filled = Math.round(pct * width);
-  return React.createElement(Text, { color: '#16a34a' }, '█'.repeat(filled) + '░'.repeat(width - filled));
+  return React.createElement(Text, { color }, '█'.repeat(filled) + '░'.repeat(width - filled));
 }
 
-// ─── Big Digit Font (3-row, 8-char-wide per digit) ───────────────────────────
-// Each character = left(2) + middle(4) + right(2), derived from 7-segment layout.
+// ─── Big Digit Font (3-row, 6-char-wide per digit) ───────────────────────────
+// Filled block style: each pixel = 2 × '█', each gap = 2 spaces.
 
 const BIG_DIGITS = {
-  '-': ['        ', '  ____  ', '        '],
-  '0': ['||____||', '||    ||', '||____||'],
-  '1': ['      ||', '      ||', '      ||'],
-  '2': ['  ____||', '||____||', '||____  '],
-  '3': ['  ____||', '  ____||', '  ____||'],
-  '4': ['||    ||', '||____||', '      ||'],
-  '5': ['||____  ', '||____||', '  ____||'],
-  '6': ['||____  ', '||____||', '||____||'],
-  '7': ['  ____||', '      ||', '      ||'],
-  '8': ['||____||', '||____||', '||____||'],
-  '9': ['||____||', '||____||', '  ____||'],
+  ' ': ['      ', '      ', '      '],
+  '-': ['      ', '██████', '      '],
+  '0': ['██████', '██  ██', '██████'],
+  '1': ['    ██', '    ██', '    ██'],
+  '2': ['██████', '  ████', '████  '],
+  '3': ['██████', '  ████', '  ████'],
+  '4': ['██  ██', '██████', '    ██'],
+  '5': ['██████', '████  ', '  ████'],
+  '6': ['██████', '████  ', '██████'],
+  '7': ['██████', '    ██', '    ██'],
+  '8': ['██████', '██████', '██████'],
+  '9': ['██████', '██████', '    ██'],
 };
 
 function bigNumRows(n) {
@@ -127,7 +128,7 @@ function NowPlayingPanel({ zone, seekPos, termWidth }) {
       h(Box, { key: 'vr0', justifyContent: 'center' }, h(Text, { color }, bigRows[0])),
       h(Box, { key: 'vr1', justifyContent: 'center' }, h(Text, { color }, bigRows[1])),
       h(Box, { key: 'vr2', justifyContent: 'center' }, h(Text, { color }, bigRows[2])),
-      h(Box, { key: 'vb'  }, h(ProgressBar, { position: volBarPos, length: volBarLen, width: termWidth - 4 })),
+      h(Box, { key: 'vb'  }, h(ProgressBar, { position: volBarPos, length: volBarLen, width: termWidth - 4, color })),
     ] : [
       // Row 1: icon + track title                    vol XX  Zone
       h(Box, { key: 'r1', justifyContent: 'space-between' },
@@ -149,7 +150,7 @@ function NowPlayingPanel({ zone, seekPos, termWidth }) {
       h(Box, { key: 'r3', marginTop: 1, justifyContent: 'space-between' },
         h(Box, null,
           h(Text, null, '   '),
-          h(ProgressBar, { position: pos, length: len, width: barW })
+          h(ProgressBar, { position: pos, length: len, width: barW, color })
         ),
         h(Text, { dimColor: true }, timeStr)
       ),
@@ -908,10 +909,8 @@ function App() {
       : null,
 
     h(Text, { key: 'sep', dimColor: true }, ' ' + '─'.repeat(termWidth - 2)),
-    h(Box, { paddingX: 1, justifyContent: 'space-between' },
-      h(Box, { key: 'left'  }, ...renderHints(leftHints,  'l')),
-      h(Box, { key: 'right' }, ...renderHints(rightHints, 'r'))
-    )
+    h(Box, { key: 'hints-nav',  paddingX: 1 }, ...renderHints(leftHints,  'l')),
+    h(Box, { key: 'hints-ctrl', paddingX: 1 }, ...renderHints(rightHints, 'r'))
   );
 }
 
