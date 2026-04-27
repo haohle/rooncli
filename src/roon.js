@@ -29,6 +29,7 @@ class RoonConnection extends EventEmitter {
     this.core = null;
     this.transport = null;
     this.browse = null;
+    this._reconnectTimer = null;
 
     this._roon = new RoonApi({
       extension_id:    'com.rooncli.terminal',
@@ -36,9 +37,14 @@ class RoonConnection extends EventEmitter {
       display_version: '1.0.0',
       publisher:       'RoonCLI',
       email:           'hao@hey.com',
+      website:         'https://github.com/haohle/rooncli/tree/main',
       log_level:       'none',
 
       core_paired: (core) => {
+        if (this._reconnectTimer) {
+          clearTimeout(this._reconnectTimer);
+          this._reconnectTimer = null;
+        }
         this.core = core;
         this.transport = core.services.RoonApiTransport;
         this.browse = core.services.RoonApiBrowse;
@@ -51,6 +57,7 @@ class RoonConnection extends EventEmitter {
         this.transport = null;
         this.browse = null;
         this.emit('unpaired', core);
+        this._scheduleReconnect();
       },
     });
 
@@ -74,6 +81,23 @@ class RoonConnection extends EventEmitter {
 
   connect() {
     this._roon.start_discovery();
+  }
+
+  // After an unpair, stop the stale sood discovery process and restart it so
+  // start_discovery() can reinitialize fresh network sockets (needed after sleep/wake).
+  _scheduleReconnect() {
+    if (this._reconnectTimer) return;
+    this._reconnectTimer = setTimeout(() => {
+      this._reconnectTimer = null;
+      if (this.core) return;
+      if (this._roon._sood) {
+        const sood = this._roon._sood;
+        // sood.stop() has a bug (missing `this.`), so manually clear the interval
+        if (sood.interface_timer) { clearInterval(sood.interface_timer); sood.interface_timer = null; }
+        this._roon._sood = null;
+      }
+      this._roon.start_discovery();
+    }, 3000);
   }
 
   _subscribeZones() {
